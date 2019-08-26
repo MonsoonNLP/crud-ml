@@ -1,11 +1,17 @@
 import sys, os, json, shutil, time, traceback
 
 from flask import Flask, request, jsonify
+from werkzeug.utils import secure_filename
+
 import pandas as pd
+from sklearn.naive_bayes import BernoulliNB as bnb
 from sklearn.externals import joblib
 import numpy as np
 
 app = Flask(__name__)
+
+app.config['UPLOAD_FOLDER'] = './uploads'
+ALLOWED_EXTENSIONS = {'txt', 'csv'}
 
 # inputs
 training_data = 'data/titanic.csv'
@@ -44,13 +50,23 @@ def predict():
         print('train first')
         return 'no model here'
 
-@app.route('/train/create', methods=['GET'])
-def create_train():
-    # using random forest as an example
-    # can do the training separately and just update the pickles
-    from sklearn.naive_bayes import BernoulliNB as bnb
+def allowed_file(filename):
+    return '.' in filename and \
+           filename.rsplit('.', 1)[1].lower() in ALLOWED_EXTENSIONS
 
-    df = pd.read_csv(training_data)
+
+@app.route('/train/create', methods=['POST'])
+def create_train():
+    if 'file' not in request.files:
+        return 'no file included in POST'
+    file = request.files['file']
+    if file and allowed_file(file.filename):
+        filename = secure_filename(file.filename)
+        file.save(os.path.join(app.config['UPLOAD_FOLDER'], filename))
+    else:
+        return 'need CSV file for upload'
+
+    df = pd.read_csv(os.path.join(app.config['UPLOAD_FOLDER'], filename))
     df_ = df[include]
 
     categoricals = []  # going to one-hot encode categorical variables
@@ -84,10 +100,19 @@ def create_train():
     return_message = 'Success. \n{0}. \n{1}.'.format(message1, message2)
     return return_message
 
-@app.route('/train/insert', methods=['GET'])
+@app.route('/train/insert', methods=['POST'])
 def insert_train():
     if clf:
-        df = pd.read_csv('data/titanic_extra.csv')
+        if 'file' not in request.files:
+            return 'no file included in POST'
+        file = request.files['file']
+        if file and allowed_file(file.filename):
+            filename = secure_filename(file.filename)
+            file.save(os.path.join(app.config['UPLOAD_FOLDER'], filename))
+        else:
+            return 'need CSV file for upload'
+
+        df = pd.read_csv(os.path.join(app.config['UPLOAD_FOLDER'], filename))
         df_ = df[include]
 
         categoricals = []  # going to one-hot encode categorical variables
@@ -106,7 +131,7 @@ def insert_train():
 
         clf.partial_fit(x, y)
         joblib.dump(clf, model_file_name)
-        return 'success'
+        return 'Success\nModel training score: %s' % clf.score(x, y)
     else:
         print('train first')
         return 'no model here'
