@@ -1,12 +1,9 @@
-import sys
-import os
-import shutil
-import time
-import traceback
+import sys, os, json, shutil, time, traceback
 
 from flask import Flask, request, jsonify
 import pandas as pd
 from sklearn.externals import joblib
+import numpy as np
 
 app = Flask(__name__)
 
@@ -47,12 +44,11 @@ def predict():
         print('train first')
         return 'no model here'
 
-
-@app.route('/train', methods=['GET'])
-def train():
+@app.route('/train/create', methods=['GET'])
+def create_train():
     # using random forest as an example
     # can do the training separately and just update the pickles
-    from sklearn.ensemble import RandomForestClassifier as rf
+    from sklearn.naive_bayes import BernoulliNB as bnb
 
     df = pd.read_csv(training_data)
     df_ = df[include]
@@ -77,20 +73,46 @@ def train():
     joblib.dump(model_columns, model_columns_file_name)
 
     global clf
-    clf = rf()
+    clf = bnb()
     start = time.time()
-    clf.fit(x, y)
+    clf.partial_fit(x, y, classes=np.unique(y))
 
     joblib.dump(clf, model_file_name)
 
     message1 = 'Trained in %.5f seconds' % (time.time() - start)
     message2 = 'Model training score: %s' % clf.score(x, y)
-    return_message = 'Success. \n{0}. \n{1}.'.format(message1, message2) 
+    return_message = 'Success. \n{0}. \n{1}.'.format(message1, message2)
     return return_message
 
+@app.route('/train/insert', methods=['GET'])
+def insert_train():
+    if clf:
+        df = pd.read_csv('data/titanic_extra.csv')
+        df_ = df[include]
 
-@app.route('/wipe', methods=['GET'])
-def wipe():
+        categoricals = []  # going to one-hot encode categorical variables
+
+        for col, col_type in df_.dtypes.items():
+            if col_type == 'O':
+                categoricals.append(col)
+            else:
+                df_[col].fillna(0, inplace=True)  # fill NA's with 0 for ints/floats, too generic
+
+        # get_dummies effectively creates one-hot encoded variables
+        df_ohe = pd.get_dummies(df_, columns=categoricals, dummy_na=True)
+
+        x = df_ohe[df_ohe.columns.difference([dependent_variable])]
+        y = df_ohe[dependent_variable]
+
+        clf.partial_fit(x, y)
+        joblib.dump(clf, model_file_name)
+        return 'success'
+    else:
+        print('train first')
+        return 'no model here'
+
+@app.route('/train/delete', methods=['GET'])
+def delete_train():
     try:
         shutil.rmtree('model')
         os.makedirs(model_directory)
@@ -105,7 +127,7 @@ if __name__ == '__main__':
     try:
         port = int(sys.argv[1])
     except Exception as e:
-        port = 80
+        port = 8080
 
     try:
         clf = joblib.load(model_file_name)
