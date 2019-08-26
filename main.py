@@ -4,9 +4,10 @@ from flask import Flask, request, jsonify
 from werkzeug.utils import secure_filename
 
 import pandas as pd
-from sklearn.naive_bayes import BernoulliNB as bnb
+from sklearn.linear_model import SGDClassifier, Perceptron, PassiveAggressiveClassifier
 from sklearn.externals import joblib
 import numpy as np
+import eli5
 
 app = Flask(__name__)
 
@@ -37,11 +38,22 @@ def predict():
             # https://github.com/amirziai/sklearnflask/issues/3
             # Thanks to @lorenzori
             query = query.reindex(columns=model_columns, fill_value=0)
-
-            prediction = list(clf.predict(query))
+            prediction = clf.predict(query)
+            explainers = []
+            for index, row in query.iterrows():
+                op_exp = { 'pos': [], 'neg': [] }
+                explanation = eli5.explain_prediction(clf, row).targets[0].feature_weights
+                for feature in explanation.pos:
+                    op_exp['pos'].append([feature.feature, feature.weight])
+                for feature in explanation.neg:
+                    op_exp['neg'].append([feature.feature, feature.weight])
+                explainers.append(op_exp)
 
             # Converting to int from int64
-            return jsonify({"prediction": list(map(int, prediction))})
+            return jsonify({
+                "predictions": list(map(int, prediction)),
+                "explanations": explainers
+            })
 
         except Exception as e:
 
@@ -89,7 +101,7 @@ def create_train():
     joblib.dump(model_columns, model_columns_file_name)
 
     global clf
-    clf = bnb()
+    clf = Perceptron()
     start = time.time()
     clf.partial_fit(x, y, classes=np.unique(y))
 
