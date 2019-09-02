@@ -9,6 +9,12 @@ from sklearn.externals import joblib
 import numpy as np
 import eli5
 
+from gensim.models.wrappers import FastText
+# For .bin use: load_fasttext_format()
+# For .vec use: load_word2vec_format()
+en_model = FastText.load_fasttext_format('wiki.en')
+ar_model = FastText.load_fasttext_format('wiki.ar')
+
 app = Flask(__name__)
 
 app.config['UPLOAD_FOLDER'] = './uploads'
@@ -66,68 +72,34 @@ def allowed_file(filename):
     return '.' in filename and \
            filename.rsplit('.', 1)[1].lower() in ALLOWED_EXTENSIONS
 
-
-@app.route('/train/create', methods=['POST'])
-def create_train():
+def validate_file(request):
     if 'file' not in request.files:
-        return 'no file included in POST'
+        raise Exception('no file included in POST')
     file = request.files['file']
     if file and allowed_file(file.filename):
         filename = secure_filename(file.filename)
         file.save(os.path.join(app.config['UPLOAD_FOLDER'], filename))
+        return filename
     else:
-        return 'need CSV file for upload'
+        raise Exception('need CSV file for upload')
 
+def process_csv(filename, vectorize_text=False):
     df = pd.read_csv(os.path.join(app.config['UPLOAD_FOLDER'], filename))
-    df_ = df[include]
-
     categoricals = []  # going to one-hot encode categorical variables
 
-    for col, col_type in df_.dtypes.items():
-        if col_type == 'O':
-            categoricals.append(col)
-        else:
-            df_[col].fillna(0, inplace=True)  # fill NA's with 0 for ints/floats, too generic
-
-    # get_dummies effectively creates one-hot encoded variables
-    df_ohe = pd.get_dummies(df_, columns=categoricals, dummy_na=True)
-
-    x = df_ohe[df_ohe.columns.difference([dependent_variable])]
-    y = df_ohe[dependent_variable]
-
-    # capture a list of columns that will be used for prediction
-    global model_columns
-    model_columns = list(x.columns)
-    joblib.dump(model_columns, model_columns_file_name)
-
-    global clf
-    clf = Perceptron()
-    start = time.time()
-    clf.partial_fit(x, y, classes=np.unique(y))
-
-    joblib.dump(clf, model_file_name)
-
-    message1 = 'Trained in %.5f seconds' % (time.time() - start)
-    message2 = 'Model training score: %s' % clf.score(x, y)
-    return_message = 'Success. \n{0}. \n{1}.'.format(message1, message2)
-    return return_message
-
-@app.route('/train/insert', methods=['POST'])
-def insert_train():
-    if clf:
-        if 'file' not in request.files:
-            return 'no file included in POST'
-        file = request.files['file']
-        if file and allowed_file(file.filename):
-            filename = secure_filename(file.filename)
-            file.save(os.path.join(app.config['UPLOAD_FOLDER'], filename))
-        else:
-            return 'need CSV file for upload'
-
-        df = pd.read_csv(os.path.join(app.config['UPLOAD_FOLDER'], filename))
+    if vectorize_text:
+        # first column is text
+        # last column is dependent variable for classifier
+        final_rows = []
+        for index, row in df_.iterrows():
+            row[0] = fasttext(row[0])
+            os.system('fasttext')
+            final_rows.append(row)
+        df_ = pd.DataFrame(final_rows, columns=cols)
+    else:
+        # include array is columns of variables used in decision
+        # last column is dependent variable for classifier
         df_ = df[include]
-
-        categoricals = []  # going to one-hot encode categorical variables
 
         for col, col_type in df_.dtypes.items():
             if col_type == 'O':
@@ -137,12 +109,86 @@ def insert_train():
 
         # get_dummies effectively creates one-hot encoded variables
         df_ohe = pd.get_dummies(df_, columns=categoricals, dummy_na=True)
+    x = df_ohe[df_ohe.columns.difference([dependent_variable])]
+    y = df_ohe[dependent_variable]
+    return (x, y)
 
-        x = df_ohe[df_ohe.columns.difference([dependent_variable])]
-        y = df_ohe[dependent_variable]
+def fitme(x, y):
+    global clf
+    clf = Perceptron()
+    clf.partial_fit(x, y, classes=np.unique(y))
+    joblib.dump(clf, model_file_name)
+    return clf
 
-        clf.partial_fit(x, y)
-        joblib.dump(clf, model_file_name)
+@app.route('/train/create', methods=['POST'])
+def create_train():
+    try:
+        filename = validate_file(request)
+    except Exception as e:
+        return e
+
+    (x, y) = process_csv(filename)
+
+    # capture a list of columns that will be used for prediction
+    global model_columns
+    model_columns = list(x.columns)
+    joblib.dump(model_columns, model_columns_file_name)
+
+    start = time.time()
+    fitme(x, y)
+
+    message1 = 'Trained in %.5f seconds' % (time.time() - start)
+    message2 = 'Model training score: %s' % clf.score(x, y)
+    return_message = 'Success. \n{0}. \n{1}.'.format(message1, message2)
+    return return_message
+
+@app.route('/train_text/create', methods=['POST'])
+def create_text():
+    try:
+        filename = validate_file(request)
+    except Exception as e:
+        return e
+
+    (x, y) = process_csv(filename, vectorize_text=True)
+
+    # capture a list of columns that will be used for prediction
+    global model_columns
+    model_columns = list(x.columns)
+    joblib.dump(model_columns, model_columns_file_name)
+
+    start = time.time()
+    fitme(x, y)
+
+    message1 = 'Trained in %.5f seconds' % (time.time() - start)
+    message2 = 'Model training score: %s' % clf.score(x, y)
+    return_message = 'Success. \n{0}. \n{1}.'.format(message1, message2)
+    return return_message
+
+@app.route('/train/insert', methods=['POST'])
+def insert_train():
+    if clf:
+        try:
+            filename = validate_file(request)
+        except Exception as e:
+            return e
+
+        (x, y) = process_csv(filename)
+        fitme(x, y)
+        return 'Success\nModel training score: %s' % clf.score(x, y)
+    else:
+        print('train first')
+        return 'no model here'
+
+@app.route('/train_text/insert', methods=['POST'])
+def insert_text():
+    if clf:
+        try:
+            filename = validate_file(request)
+        except Exception as e:
+            return e
+
+        (x, y) = process_csv(filename, vectorize_text=True)
+        fitme(x, y)
         return 'Success\nModel training score: %s' % clf.score(x, y)
     else:
         print('train first')
