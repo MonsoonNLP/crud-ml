@@ -9,10 +9,12 @@ import joblib
 import numpy as np
 import eli5
 
-import nltk
+print('loading text vectors')
+from nltk.tokenize import wordpunct_tokenize
 from gensim.models.keyedvectors import KeyedVectors
 ar_model = KeyedVectors.load_word2vec_format('wiki.ar.vec')
 
+print('launching app')
 app = Flask(__name__)
 
 app.config['UPLOAD_FOLDER'] = './uploads'
@@ -90,28 +92,27 @@ def process_csv(filename, vectorize_text=False):
         # last column is dependent variable for classifier
         final_rows = []
         cols=[]
-        for index, row in df.iterrows():
-            words = tokenize(row[0])
+        for index, srs in df.iterrows():
+            row = list(srs)
+            words = wordpunct_tokenize(row[0])
             sentence_vecs = []
+            # print(row[1:])
             for w in range(0, len(words)):
                 word = words[w]
                 word_vec = ar_model[word]
                 for v in range(0, len(word_vec)):
                     if w == 0:
-                        sentence_vecs.append(0)
-                        sentence_vecs.append([])
-                        sentence_vecs.append([])
+                        sentence_vecs.append(0.0)
+                        sentence_vecs.append(word_vec[v])
+                        sentence_vecs.append(word_vec[v])
                         cols += ['avg_' + str(v), 'min_' + str(v), 'max_' + str(v)]
-                    sentence_vecs[v * 3] += word_vec[v]
-                    sentence_vecs[v * 3 + 1].append(word_vec[v])
-                    sentence_vecs[v * 3 + 2].append(word_vec[v])
-            for v in range(0, len(sentence_vecs) / 3):
-                sentence_vecs[v * 3] /= float(len(words))
-                sentence_vecs[v * 3 + 1] = min(sentence_vecs[v * 3 + 1])
-                sentence_vecs[v * 3 + 2] = max(sentence_vecs[v * 3 + 2])
+                    sentence_vecs[v * 3] += float(word_vec[v]) / float(len(words))
+                    sentence_vecs[v * 3 + 1] = max(word_vec[v], sentence_vecs[v * 3 + 1])
+                    sentence_vecs[v * 3 + 2] = min(word_vec[v], sentence_vecs[v * 3 + 2])
             sentence_vecs += row[1:]
             cols += df.columns[1:]
             final_rows.append(sentence_vecs)
+        print(final_rows)
         df_ = pd.DataFrame(final_rows, columns=cols)
     else:
         # include array is columns of variables used in decision
