@@ -105,15 +105,16 @@ def process_csv(filename, vectorize_text=False):
                         sentence_vecs.append(0.0)
                         sentence_vecs.append(word_vec[v])
                         sentence_vecs.append(word_vec[v])
-                        cols += ['avg_' + str(v), 'min_' + str(v), 'max_' + str(v)]
+                        if index == 0:
+                            cols += ['avg_' + str(v), 'min_' + str(v), 'max_' + str(v)]
                     sentence_vecs[v * 3] += float(word_vec[v]) / float(len(words))
                     sentence_vecs[v * 3 + 1] = max(word_vec[v], sentence_vecs[v * 3 + 1])
                     sentence_vecs[v * 3 + 2] = min(word_vec[v], sentence_vecs[v * 3 + 2])
             sentence_vecs += row[1:]
-            cols += df.columns[1:]
+            if index == 0:
+                cols += list(df.columns)[1:]
             final_rows.append(sentence_vecs)
-        print(final_rows)
-        df_ = pd.DataFrame(final_rows, columns=cols)
+        df_ohe = pd.DataFrame(final_rows, columns=cols)
     else:
         # include array is columns of variables used in decision
         # last column is dependent variable for classifier
