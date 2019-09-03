@@ -5,9 +5,14 @@ from werkzeug.utils import secure_filename
 
 import pandas as pd
 from sklearn.linear_model import SGDClassifier, Perceptron, PassiveAggressiveClassifier
+from sklearn.pipeline import make_pipeline
+from sklearn.feature_extraction.text import VectorizerMixin
+
 import joblib
 import numpy as np
+
 import eli5
+from eli5.lime import TextExplainer
 
 print('loading text vectors')
 from nltk.tokenize import wordpunct_tokenize
@@ -32,38 +37,91 @@ model_columns_file_name = '%s/model_columns.pkl' % model_directory
 # These will be populated at training time
 model_columns = None
 clf = None
-clfclasses = []
+clfclasses = ['pos', 'neg']
+text_type = True # False
+
+class V(VectorizerMixin):
+    def fit (self, X, y=None):
+        return self
+
+    def transform (self, X):
+        rows = []
+        for item in X:
+            if 'text' in item:
+                row = []
+                text_src = item['text']
+                #del item['text']
+                words = wordpunct_tokenize(text_src)
+                sentence_vecs = []
+                for w in range(0, len(words)):
+                    word = words[w]
+                    if word in ar_model:
+                        word_vec = ar_model[word]
+                    else:
+                        word_vec = ar_model['the']
+                    for v in range(0, len(word_vec)):
+                        if w == 0:
+                            item['avg_' + str(v)] = 0.0
+                            item['max_' + str(v)] = word_vec[v]
+                            item['min_' + str(v)] = word_vec[v]
+                        item['avg_' + str(v)] += float(word_vec[v]) / float(len(words))
+                        item['max_' + str(v)] = max(word_vec[v], item['max_' + str(v)])
+                        item['min_' + str(v)] = min(word_vec[v], item['min_' + str(v)])
+            rows.append(item)
+
+        query = pd.get_dummies(pd.DataFrame(rows))
+        query = query.reindex(columns=model_columns, fill_value=0)
+        return query
+
+vectorizer = V()
 
 @app.route('/predict', methods=['POST'])
 def predict():
     if clf:
         try:
-            json_ = request.json
-            query = pd.get_dummies(pd.DataFrame(json_))
 
             # https://github.com/amirziai/sklearnflask/issues/3
             # Thanks to @lorenzori
-            query = query.reindex(columns=model_columns, fill_value=0)
-            prediction = clf.predict(query)
+
             explainers = []
-            for index, row in query.iterrows():
-                op_exp = { 'pos': [], 'neg': [] }
-                explanation = eli5.explain_prediction(clf, row).targets[0].feature_weights
-                for feature in explanation.pos:
-                    op_exp['pos'].append([feature.feature, feature.weight])
-                for feature in explanation.neg:
-                    op_exp['neg'].append([feature.feature, feature.weight])
-                explainers.append(op_exp)
+            if text_type:
+                pipe = make_pipeline(vectorizer, clf)
+                prediction = pipe.predict(request.json)
+
+                for post in request.json:
+                    te = TextExplainer(random_state=42, n_samples=500)
+                    te.fit(post['text'], pipe.predict_proba)
+                    made = te.explain_prediction(target_names=clfclasses)
+                    explanation = made.targets[0].feature_weights
+                    op_exp = {'pos': [], 'neg': []}
+                    for feature in explanation.pos:
+                        op_exp['pos'].append([feature.feature, feature.weight])
+                    for feature in explanation.neg:
+                        op_exp['neg'].append([feature.feature, feature.weight])
+                    explainers.append(op_exp)
+            else:
+                rows = request.json
+                query = pd.get_dummies(pd.DataFrame(rows))
+                query = query.reindex(columns=model_columns, fill_value=0)
+                prediction = clf.predict(query)
+                for index, row in query.iterrows():
+                    explanation = eli5.explain_prediction(clf, row).targets[0].feature_weights
+                    op_exp = {'pos': [], 'neg': []}
+                    for feature in explanation.pos:
+                        op_exp['pos'].append([feature.feature, feature.weight])
+                    for feature in explanation.neg:
+                        op_exp['neg'].append([feature.feature, feature.weight])
+                    explainers.append(op_exp)
 
             # Converting to int from int64
             return jsonify({
-                "predictions": list(map(int, prediction)),
+                "predictions": list(map(str, prediction)),
                 "explanations": explainers
             })
 
         except Exception as e:
 
-            return jsonify({'error': e.message, 'trace': traceback.format_exc()})
+            return jsonify({'error': str(e), 'trace': traceback.format_exc()})
     else:
         print('train first')
         return 'no model here'
@@ -99,14 +157,17 @@ def process_csv(filename, vectorize_text=False):
             # print(row[1:])
             for w in range(0, len(words)):
                 word = words[w]
-                word_vec = ar_model[word]
+                if word in ar_model:
+                    word_vec = ar_model[word]
+                else:
+                    word_vec = ar_model['the']
                 for v in range(0, len(word_vec)):
                     if w == 0:
                         sentence_vecs.append(0.0)
                         sentence_vecs.append(word_vec[v])
                         sentence_vecs.append(word_vec[v])
                         if index == 0:
-                            cols += ['avg_' + str(v), 'min_' + str(v), 'max_' + str(v)]
+                            cols += ['avg_' + str(v), 'max_' + str(v), 'min_' + str(v)]
                     sentence_vecs[v * 3] += float(word_vec[v]) / float(len(words))
                     sentence_vecs[v * 3 + 1] = max(word_vec[v], sentence_vecs[v * 3 + 1])
                     sentence_vecs[v * 3 + 2] = min(word_vec[v], sentence_vecs[v * 3 + 2])
@@ -114,12 +175,13 @@ def process_csv(filename, vectorize_text=False):
             if index == 0:
                 cols += list(df.columns)[1:]
             final_rows.append(sentence_vecs)
-        df_ohe = pd.DataFrame(final_rows, columns=cols)
         dependent_variable = cols[-1]
+        df_ = pd.DataFrame(final_rows, columns=cols)
     else:
         # include array is columns of variables used in decision
         # last column is dependent variable for classifier
         df_ = df[include]
+        dependent_variable = include[-1]
 
         for col, col_type in df_.dtypes.items():
             if col_type == 'O':
@@ -127,16 +189,15 @@ def process_csv(filename, vectorize_text=False):
             else:
                 df_[col].fillna(0, inplace=True)  # fill NA's with 0 for ints/floats, too generic
 
-        # get_dummies effectively creates one-hot encoded variables
-        df_ohe = pd.get_dummies(df_, columns=categoricals, dummy_na=True)
-        dependent_variable = include[-1]
+    # get_dummies effectively creates one-hot encoded variables
+    df_ohe = pd.get_dummies(df_, columns=categoricals, dummy_na=True)
     x = df_ohe[df_ohe.columns.difference([dependent_variable])]
     y = df_ohe[dependent_variable]
     return (x, y)
 
 def fitme(x, y):
     global clf, clfclasses
-    clf = Perceptron()
+    clf = SGDClassifier(loss='log')
     if len(clfclasses) == 0:
         clfclasses = np.unique(y)
     clf.partial_fit(x, y, classes=clfclasses)
@@ -149,7 +210,7 @@ def create_train():
         filename = validate_file(request)
     except Exception as e:
         print(e)
-        return e.message
+        return str(e)
 
     global clfclasses
     clfclasses = []
@@ -161,6 +222,7 @@ def create_train():
     joblib.dump(model_columns, model_columns_file_name)
 
     start = time.time()
+    text_type = False
     fitme(x, y)
 
     message1 = 'Trained in %.5f seconds' % (time.time() - start)
@@ -174,7 +236,7 @@ def create_text():
         filename = validate_file(request)
     except Exception as e:
         print(e)
-        return e.message
+        return str(e)
 
     global clfclasses
     clfclasses = []
@@ -186,6 +248,7 @@ def create_text():
     joblib.dump(model_columns, model_columns_file_name)
 
     start = time.time()
+    text_type = True
     fitme(x, y)
 
     message1 = 'Trained in %.5f seconds' % (time.time() - start)
@@ -200,8 +263,9 @@ def insert_train():
             filename = validate_file(request)
         except Exception as e:
             print(e)
-            return e.message
+            return str(e)
 
+        text_type = False
         (x, y) = process_csv(filename)
         fitme(x, y)
         return 'Success\nModel training score: %s' % clf.score(x, y)
@@ -216,8 +280,9 @@ def insert_text():
             filename = validate_file(request)
         except Exception as e:
             print(e)
-            return e.message
+            return str(e)
 
+        text_type = True
         (x, y) = process_csv(filename, vectorize_text=True)
         fitme(x, y)
         return 'Success\nModel training score: %s' % clf.score(x, y)

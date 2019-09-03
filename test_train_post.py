@@ -29,5 +29,5 @@ print(r2.content)
 body = [
     {"text": "what now?"}
 ]
-r3 = requests.post(url + '/predict_text', json=body)
+r3 = requests.post(url + '/predict', json=body)
 print(r3.content)
