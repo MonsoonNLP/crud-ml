@@ -5,15 +5,13 @@ from werkzeug.utils import secure_filename
 
 import pandas as pd
 from sklearn.linear_model import SGDClassifier, Perceptron, PassiveAggressiveClassifier
-from sklearn.externals import joblib
+import joblib
 import numpy as np
 import eli5
 
-from gensim.models.wrappers import FastText
-# For .bin use: load_fasttext_format()
-# For .vec use: load_word2vec_format()
-en_model = FastText.load_fasttext_format('wiki.en')
-ar_model = FastText.load_fasttext_format('wiki.ar')
+import nltk
+from gensim.models.keyedvectors import KeyedVectors
+ar_model = KeyedVectors.load_word2vec_format('wiki.ar.vec')
 
 app = Flask(__name__)
 
@@ -91,10 +89,29 @@ def process_csv(filename, vectorize_text=False):
         # first column is text
         # last column is dependent variable for classifier
         final_rows = []
-        for index, row in df_.iterrows():
-            row[0] = fasttext(row[0])
-            os.system('fasttext')
-            final_rows.append(row)
+        cols=[]
+        for index, row in df.iterrows():
+            words = tokenize(row[0])
+            sentence_vecs = []
+            for w in range(0, len(words)):
+                word = words[w]
+                word_vec = ar_model[word]
+                for v in range(0, len(word_vec)):
+                    if w == 0:
+                        sentence_vecs.append(0)
+                        sentence_vecs.append([])
+                        sentence_vecs.append([])
+                        cols += ['avg_' + str(v), 'min_' + str(v), 'max_' + str(v)]
+                    sentence_vecs[v * 3] += word_vec[v]
+                    sentence_vecs[v * 3 + 1].append(word_vec[v])
+                    sentence_vecs[v * 3 + 2].append(word_vec[v])
+            for v in range(0, len(sentence_vecs) / 3):
+                sentence_vecs[v * 3] /= float(len(words))
+                sentence_vecs[v * 3 + 1] = min(sentence_vecs[v * 3 + 1])
+                sentence_vecs[v * 3 + 2] = max(sentence_vecs[v * 3 + 2])
+            sentence_vecs += row[1:]
+            cols += df.columns[1:]
+            final_rows.append(sentence_vecs)
         df_ = pd.DataFrame(final_rows, columns=cols)
     else:
         # include array is columns of variables used in decision

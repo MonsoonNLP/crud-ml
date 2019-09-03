@@ -2,6 +2,7 @@ import requests
 
 url = 'http://localhost:8080'
 
+# regular data post
 files = { 'file': open('data/titanic.csv', 'rb') }
 r = requests.post(url + '/train/create', files=files, data={})
 print(r.content)
@@ -15,3 +16,8 @@ body = [
 ]
 r3 = requests.post(url + '/predict', json=body)
 print(r3.content)
+
+# text data post
+files = { 'file': open('data/nlp.csv', 'rb') }
+r = requests.post(url + '/train_text/create', files=files, data={})
+print(r.content)
