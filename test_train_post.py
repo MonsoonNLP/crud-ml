@@ -21,3 +21,13 @@ print(r3.content)
 files = { 'file': open('data/nlp.csv', 'rb') }
 r = requests.post(url + '/train_text/create', files=files, data={})
 print(r.content)
+
+files = { 'file': open('data/nlp2.csv', 'rb') }
+r2 = requests.post(url + '/train_text/insert', files=files, data={})
+print(r2.content)
+
+body = [
+    {"text": "what now?"}
+]
+r3 = requests.post(url + '/predict_text', json=body)
+print(r3.content)

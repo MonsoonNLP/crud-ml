@@ -32,7 +32,7 @@ model_columns_file_name = '%s/model_columns.pkl' % model_directory
 # These will be populated at training time
 model_columns = None
 clf = None
-
+clfclasses = []
 
 @app.route('/predict', methods=['POST'])
 def predict():
@@ -91,7 +91,7 @@ def process_csv(filename, vectorize_text=False):
         # first column is text
         # last column is dependent variable for classifier
         final_rows = []
-        cols=[]
+        cols = []
         for index, srs in df.iterrows():
             row = list(srs)
             words = wordpunct_tokenize(row[0])
@@ -115,6 +115,7 @@ def process_csv(filename, vectorize_text=False):
                 cols += list(df.columns)[1:]
             final_rows.append(sentence_vecs)
         df_ohe = pd.DataFrame(final_rows, columns=cols)
+        dependent_variable = cols[-1]
     else:
         # include array is columns of variables used in decision
         # last column is dependent variable for classifier
@@ -128,14 +129,17 @@ def process_csv(filename, vectorize_text=False):
 
         # get_dummies effectively creates one-hot encoded variables
         df_ohe = pd.get_dummies(df_, columns=categoricals, dummy_na=True)
+        dependent_variable = include[-1]
     x = df_ohe[df_ohe.columns.difference([dependent_variable])]
     y = df_ohe[dependent_variable]
     return (x, y)
 
 def fitme(x, y):
-    global clf
+    global clf, clfclasses
     clf = Perceptron()
-    clf.partial_fit(x, y, classes=np.unique(y))
+    if len(clfclasses) == 0:
+        clfclasses = np.unique(y)
+    clf.partial_fit(x, y, classes=clfclasses)
     joblib.dump(clf, model_file_name)
     return clf
 
@@ -147,6 +151,8 @@ def create_train():
         print(e)
         return e.message
 
+    global clfclasses
+    clfclasses = []
     (x, y) = process_csv(filename)
 
     # capture a list of columns that will be used for prediction
@@ -170,6 +176,8 @@ def create_text():
         print(e)
         return e.message
 
+    global clfclasses
+    clfclasses = []
     (x, y) = process_csv(filename, vectorize_text=True)
 
     # capture a list of columns that will be used for prediction
