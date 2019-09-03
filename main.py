@@ -63,7 +63,7 @@ def predict():
 
         except Exception as e:
 
-            return jsonify({'error': str(e), 'trace': traceback.format_exc()})
+            return jsonify({'error': e.message, 'trace': traceback.format_exc()})
     else:
         print('train first')
         return 'no model here'
@@ -125,7 +125,8 @@ def create_train():
     try:
         filename = validate_file(request)
     except Exception as e:
-        return e
+        print(e)
+        return e.message
 
     (x, y) = process_csv(filename)
 
@@ -147,7 +148,8 @@ def create_text():
     try:
         filename = validate_file(request)
     except Exception as e:
-        return e
+        print(e)
+        return e.message
 
     (x, y) = process_csv(filename, vectorize_text=True)
 
@@ -170,7 +172,8 @@ def insert_train():
         try:
             filename = validate_file(request)
         except Exception as e:
-            return e
+            print(e)
+            return e.message
 
         (x, y) = process_csv(filename)
         fitme(x, y)
@@ -185,7 +188,8 @@ def insert_text():
         try:
             filename = validate_file(request)
         except Exception as e:
-            return e
+            print(e)
+            return e.message
 
         (x, y) = process_csv(filename, vectorize_text=True)
         fitme(x, y)
@@ -202,7 +206,7 @@ def delete_train():
         return 'Model wiped'
 
     except Exception as e:
-        print(str(e))
+        print(e)
         return 'Could not remove and recreate the model directory'
 
 
