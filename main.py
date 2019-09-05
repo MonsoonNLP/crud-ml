@@ -62,11 +62,11 @@ class V(VectorizerMixin):
                     for v in range(0, len(word_vec)):
                         if w == 0:
                             item['avg_' + str(v)] = 0.0
-                            item['max_' + str(v)] = word_vec[v]
-                            item['min_' + str(v)] = word_vec[v]
+                            #item['max_' + str(v)] = word_vec[v]
+                            #item['min_' + str(v)] = word_vec[v]
                         item['avg_' + str(v)] += float(word_vec[v]) / float(len(words))
-                        item['max_' + str(v)] = max(word_vec[v], item['max_' + str(v)])
-                        item['min_' + str(v)] = min(word_vec[v], item['min_' + str(v)])
+                        #item['max_' + str(v)] = max(word_vec[v], item['max_' + str(v)])
+                        #item['min_' + str(v)] = min(word_vec[v], item['min_' + str(v)])
             rows.append(item)
 
         query = pd.get_dummies(pd.DataFrame(rows))
@@ -91,7 +91,7 @@ def predict():
                 for post in request.json:
                     te = TextExplainer(random_state=42, n_samples=500)
                     te.fit(post['text'], pipe.predict_proba)
-                    made = te.explain_prediction(target_names=clfclasses)
+                    made = te.explain_prediction(target_names=['pos', 'neg'])
                     explanation = made.targets[0].feature_weights
                     op_exp = {'pos': [], 'neg': []}
                     for feature in explanation.pos:
@@ -164,13 +164,13 @@ def process_csv(filename, vectorize_text=False):
                 for v in range(0, len(word_vec)):
                     if w == 0:
                         sentence_vecs.append(0.0)
-                        sentence_vecs.append(word_vec[v])
-                        sentence_vecs.append(word_vec[v])
+                        #sentence_vecs.append(word_vec[v])
+                        #sentence_vecs.append(word_vec[v])
                         if index == 0:
-                            cols += ['avg_' + str(v), 'max_' + str(v), 'min_' + str(v)]
-                    sentence_vecs[v * 3] += float(word_vec[v]) / float(len(words))
-                    sentence_vecs[v * 3 + 1] = max(word_vec[v], sentence_vecs[v * 3 + 1])
-                    sentence_vecs[v * 3 + 2] = min(word_vec[v], sentence_vecs[v * 3 + 2])
+                            cols += ['avg_' + str(v)] #, 'max_' + str(v), 'min_' + str(v)]
+                    sentence_vecs[v * 1] += float(word_vec[v]) / float(len(words))
+                    #sentence_vecs[v * 3 + 1] = max(word_vec[v], sentence_vecs[v * 3 + 1])
+                    #sentence_vecs[v * 3 + 2] = min(word_vec[v], sentence_vecs[v * 3 + 2])
             sentence_vecs += row[1:]
             if index == 0:
                 cols += list(df.columns)[1:]
