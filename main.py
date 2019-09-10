@@ -16,8 +16,9 @@ from eli5.lime import TextExplainer
 
 print('loading text vectors')
 from nltk.tokenize import wordpunct_tokenize
-from gensim.models.keyedvectors import KeyedVectors
-ar_model = KeyedVectors.load_word2vec_format('wiki.ar.vec')
+
+en_model = lambda word: json.loads(requests.get('http://localhost:9000/word/en?word=' + word).body)
+ar_model = lambda word: json.loads(requests.get('http://localhost:9000/word/ar?word=' + word).body)
 
 print('launching app')
 app = Flask(__name__)
@@ -55,10 +56,7 @@ class V(VectorizerMixin):
                 sentence_vecs = []
                 for w in range(0, len(words)):
                     word = words[w]
-                    if word in ar_model:
-                        word_vec = ar_model[word]
-                    else:
-                        word_vec = ar_model['the']
+                    word_vec = ar_model(word)
                     for v in range(0, len(word_vec)):
                         if w == 0:
                             item['avg_' + str(v)] = 0.0
@@ -157,10 +155,7 @@ def process_csv(filename, vectorize_text=False):
             # print(row[1:])
             for w in range(0, len(words)):
                 word = words[w]
-                if word in ar_model:
-                    word_vec = ar_model[word]
-                else:
-                    word_vec = ar_model['the']
+                word_vec = ar_model(word])
                 for v in range(0, len(word_vec)):
                     if w == 0:
                         sentence_vecs.append(0.0)
