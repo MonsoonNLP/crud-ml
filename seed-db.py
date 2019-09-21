@@ -13,7 +13,8 @@ cursor.execute("""
 CREATE TABLE IF NOT EXISTS models (
     id SERIAL PRIMARY KEY,
     created BIGINT,
-    updated BIGINT
+    updated BIGINT,
+    text_type BOOLEAN
 )
 """)
 conn.commit()

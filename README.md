@@ -28,16 +28,16 @@ You need PostgreSQL.
 initdb crud-db
 postgres -D crud-db
 createdb crud-db
-python3 seed-db.py postgres:///crud-db
+python3 seed-db.py postgresql:///crud-db
 ```
 
 ### Running API
 ```
-python3 main.py postgres:///crud-db
+python3 main.py postgresql:///crud-db
 ```
 
 # Endpoints
-### /predict (POST)
+### /predict/:model_id (POST)
 Returns an array of predictions given a JSON object representing independent variables. Here's a sample input:
 ```
 [
@@ -56,15 +56,18 @@ and sample output:
 ### /train/create (POST)
 Trains a classifier model with numeric or categorical values from a CSV file.
 
-#### /train/insert (POST)
+#### /train/insert/:model_id (POST)
 Adds more rows to incrementally train the classifier model of numeric and categorical values.
 
 ### /train_text/create (POST)
 Use FastText to tokenize and vectorize the text of your first column, and expect other columns
 to be numeric (should add categorical later).
 
-#### /train_text/insert (POST)
+#### /train_text/insert/:model_id (POST)
 Adds more rows to incrementally train the text classifier model.
 
-### /train/delete (GET)
-Removes the trained model.
+### /delete/:model_id (GET)
+Deletes the trained model and its training data.
+
+### /training_data/:model_id (GET)
+HTML / JS table of training data

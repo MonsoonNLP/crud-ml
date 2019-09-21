@@ -1,4 +1,4 @@
-import sys, os, json, shutil, time, traceback
+import sys, os, json, time, traceback
 from datetime import datetime
 
 # Flask server stuff
@@ -51,16 +51,17 @@ app = Flask(__name__)
 app.config['UPLOAD_FOLDER'] = './uploads'
 ALLOWED_EXTENSIONS = {'txt', 'csv'}
 
-# pickled model
-model_directory = 'model'
-model_file_name = '%s/model.pkl' % model_directory
-model_columns_file_name = '%s/model_columns.pkl' % model_directory
-
 # These should be populated at training time
 model_columns = None
 clf = None
 clfclasses = ['pos', 'neg']
 text_type = True # False
+def model_file_name(model_id):
+    model_id = str(int(model_id))
+    return os.path.join('model', model_id + '.pkl')
+def model_columns_file_name(model_id):
+    model_id = str(int(model_id))
+    return os.path.join('model', model_id + '_columns.pkl')
 
 # text tokenization and vectorization using FastText
 class V(VectorizerMixin):
@@ -204,20 +205,20 @@ def process_csv(filename, vectorize_text=False):
     y = df_ohe[dependent_variable]
     return (x, y)
 
-def fitme(x, y):
+def fitme(x, y, model_id):
     global clf, clfclasses
     clf = SGDClassifier(loss='log')
     if len(clfclasses) == 0:
         clfclasses = np.unique(y)
     clf.partial_fit(x, y, classes=clfclasses)
-    joblib.dump(clf, model_file_name)
+    joblib.dump(clf, model_file_name(model_id))
     return clf
 
-def new_model_id():
+def new_model_id(text_type=False):
     nowtime = int(datetime.now().timestamp())
-    cursor.execute("INSERT INTO models (created, updated) \
-        VALUES (%s, %s)\
-        RETURNING id", (nowtime, nowtime))
+    cursor.execute("INSERT INTO models (created, updated, text_type) \
+        VALUES (%s, %s, %s)\
+        RETURNING id", (nowtime, nowtime, text_type))
     conn.commit()
     row = cursor.fetchone()
     return row[0]
@@ -233,9 +234,19 @@ def get_headers(model_id):
         header_cache[model_id] = response
         return response
 
-def upload_csv_file(filename, table_code):
+table_cache = {}
+def upload_csv_file(filename, table_code, update_only=False):
     fn = os.path.join(app.config['UPLOAD_FOLDER'], filename)
-    return os.system('csvsql ' + fn + ' --db ' + connection_string + ' --tables rows_' + str(table_code) + ' --insert &')
+    table_code = str(int(table_code))
+    if update_only:
+        # verify enough time passed that this table exists
+        if table_code not in table_cache:
+            cursor.execute("SELECT * FROM rows_" + table_code + " LIMIT 0")
+            table_cache[table_code] = True
+        update_code = " --no-create"
+    else:
+        update_code = ""
+    return os.system('csvsql ' + fn + ' --db ' + connection_string + ' --tables rows_' + table_code + ' --insert ' + update_code + ' &')
 
 @app.route('/train/create', methods=['POST'])
 def create_train():
@@ -249,23 +260,23 @@ def create_train():
     clfclasses = []
     (x, y) = process_csv(filename)
 
-    my_id = new_model_id()
-    upload_csv_file(filename, my_id)
+    model_id = new_model_id()
+    upload_csv_file(filename, model_id)
 
     # capture a list of columns that will be used for prediction
     global model_columns
     model_columns = list(x.columns)
-    joblib.dump(model_columns, model_columns_file_name)
+    joblib.dump(model_columns, model_columns_file_name(model_id))
 
     start = time.time()
     text_type = False
-    fitme(x, y)
+    fitme(x, y, model_id)
 
     return_message = {
         "status": "success",
         "train_time": (time.time() - start),
         "train_score": clf.score(x, y),
-        "model_id": my_id
+        "model_id": model_id
     }
     return jsonify(return_message)
 
@@ -281,56 +292,74 @@ def create_text():
     clfclasses = []
     (x, y) = process_csv(filename, vectorize_text=True)
 
-    my_id = new_model_id()
-    upload_csv_file(filename, my_id)
+    model_id = new_model_id(text_type=True)
+    upload_csv_file(filename, model_id)
 
     # capture a list of columns that will be used for prediction
     global model_columns
     model_columns = list(x.columns)
-    joblib.dump(model_columns, model_columns_file_name)
+    joblib.dump(model_columns, model_columns_file_name(model_id))
 
     start = time.time()
     text_type = True
-    fitme(x, y)
+    fitme(x, y, model_id)
 
     return_message = {
         "status": "success",
         "train_time": (time.time() - start),
         "train_score": clf.score(x, y),
-        "model_id": my_id
+        "model_id": model_id
     }
     return jsonify(return_message)
 
-@app.route('/train/insert', methods=['POST'])
-def insert_train():
+@app.route('/train/insert/<model_id>', methods=['POST'])
+def insert_train(model_id):
     if clf:
         try:
             filename = validate_file(request)
+            model_id = int(model_id)
         except Exception as e:
             print(e)
             return str(e)
 
         text_type = False
         (x, y) = process_csv(filename)
-        fitme(x, y)
-        return 'Success\nModel training score: %s' % clf.score(x, y)
+        try:
+            upload_csv_file(filename, model_id, update_only=True)
+        except:
+            return 'initial CSV has not created table yet / or failed to create table'
+        fitme(x, y, model_id)
+        return jsonify({
+            "status": "success",
+            "model_id": model_id,
+            "score": clf.score(x, y)
+        })
     else:
         print('train first')
         return 'no model here'
 
-@app.route('/train_text/insert', methods=['POST'])
-def insert_text():
+@app.route('/train_text/insert/<model_id>', methods=['POST'])
+def insert_text(model_id):
     if clf:
         try:
             filename = validate_file(request)
+            model_id = int(model_id)
         except Exception as e:
             print(e)
             return str(e)
 
         text_type = True
         (x, y) = process_csv(filename, vectorize_text=True)
-        fitme(x, y)
-        return 'Success\nModel training score: %s' % clf.score(x, y)
+        try:
+            upload_csv_file(filename, model_id, update_only=True)
+        except:
+            return 'initial CSV has not created table yet / or failed to create table'
+        fitme(x, y, model_id)
+        return jsonify({
+            "status": "success",
+            "model_id": model_id,
+            "score": clf.score(x, y)
+        })
     else:
         print('train first')
         return 'no model here'
@@ -383,11 +412,16 @@ def tdata_api(model_id):
         "data": rows
     })
 
-@app.route('/train/delete', methods=['GET'])
-def delete_train():
+@app.route('/delete/<model_id>', methods=['GET'])
+def delete_train(model_id):
+    model_id = str(int(model_id))
     try:
-        shutil.rmtree('model')
-        os.makedirs(model_directory)
+        os.remove('model/' + model_id + '.pkl')
+        os.remove('model/' + model_id + '_columns.pkl')
+
+        cursor.execute('DROP TABLE rows_' + model_id)
+        conn.commit()
+
         return 'Model wiped'
 
     except Exception as e:
@@ -399,9 +433,10 @@ if __name__ == '__main__':
     port = 8080
 
     try:
-        clf = joblib.load(model_file_name)
+        model_id = -1
+        clf = joblib.load(model_file_name(model_id))
         print('model loaded')
-        model_columns = joblib.load(model_columns_file_name)
+        model_columns = joblib.load(model_columns_file_name(model_id))
         print('model columns loaded')
 
     except Exception as e:
