@@ -1,21 +1,39 @@
-# Flask API for scikit learn
-A simple Flask application that can serve predictions from a scikit-learn model. Reads a pickled sklearn model into memory when the Flask app is started and returns predictions through the /predict endpoint. You can also use the /train endpoint to train/retrain the model. Any sklearn model can be used for prediction.
+# CRUD ML
 
-Read more in [this blog post](https://medium.com/@amirziai/a-flask-api-for-serving-scikit-learn-models-c8bcdaa41daa).
+This repo is based directly on Amir Ziai's <a href="https://github.com/amirziai/sklearnflask">SKLearnFlask</a> ML server, which serves predictions from a scikit-learn model.
+
+The new features:
+- accepts POST-ed CSVs
+- incremental learning (using particular algorithms)
+- explainable AI
+- database of submitted data rows
 
 ### Dependencies
 - scikit-learn
 - Flask
 - pandas
 - numpy
+- joblib
+- requests
+- csvkit
+- gensim
+- nltk
+- eli5
+- psycopg2
 
-```
-pip install -r requirements.txt
+### Creating database
+You need PostgreSQL.
+
+```bash
+initdb crud-db
+postgres -D crud-db
+createdb crud-db
+python3 seed-db.py postgres:///crud-db
 ```
 
 ### Running API
 ```
-python main.py <port>
+python3 main.py postgres:///crud-db
 ```
 
 # Endpoints
@@ -32,12 +50,21 @@ Returns an array of predictions given a JSON object representing independent var
 
 and sample output:
 ```
-{"prediction": [0, 1, 1, 0]}
+{"prediction": [0, 1, 1, 0], "explanations": [{...}, {}, {}, {}]}
 ```
 
+### /train/create (POST)
+Trains a classifier model with numeric or categorical values from a CSV file.
 
-### /train (GET)
-Trains the model. This is currently hard-coded to be a random forest model that is run on a subset of columns of the titanic dataset.
+#### /train/insert (POST)
+Adds more rows to incrementally train the classifier model of numeric and categorical values.
 
-### /wipe (GET)
+### /train_text/create (POST)
+Use FastText to tokenize and vectorize the text of your first column, and expect other columns
+to be numeric (should add categorical later).
+
+#### /train_text/insert (POST)
+Adds more rows to incrementally train the text classifier model.
+
+### /train/delete (GET)
 Removes the trained model.

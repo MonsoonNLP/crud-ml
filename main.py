@@ -1,46 +1,68 @@
 import sys, os, json, shutil, time, traceback
+from datetime import datetime
 
+# Flask server stuff
 from flask import Flask, request, jsonify
 from werkzeug.utils import secure_filename
 
+# Data Science stuff: SKLearn / Pandas / NumPY
 import pandas as pd
 from sklearn.linear_model import SGDClassifier, Perceptron, PassiveAggressiveClassifier
 from sklearn.pipeline import make_pipeline
 from sklearn.feature_extraction.text import VectorizerMixin
-
 import joblib
 import numpy as np
 
+# XAI stuff
 import eli5
 from eli5.lime import TextExplainer
 
-print('loading text vectors')
+# DB stuff
+import psycopg2
+from psycopg2.extras import DictCursor
+try:
+    connection_string = sys.argv[1]
+except:
+    print('need a DB connection string')
+conn = psycopg2.connect(connection_string)
+cursor = conn.cursor(cursor_factory=DictCursor)
+
+# NLP stuff
+DEMO = True
+if DEMO:
+    print("using localhost:9000 as word vector source")
+    import requests
+    #en_model = lambda word: json.loads(requests.get('http://localhost:9000/word/en?word=' + word).body)
+    ar_model = lambda word: json.loads(requests.get('http://localhost:9000/word/ar?word=' + word).body)
+else:
+    print('loading text vectors')
+    from gensim.models.keyedvectors import KeyedVectors
+    ar_src = KeyedVectors.load_word2vec_format('wiki.ar.vec')
+    def ar_model(word):
+        if word not in ar_src:
+            word = "the"
+        return ar_src[word]
 from nltk.tokenize import wordpunct_tokenize
 
-en_model = lambda word: json.loads(requests.get('http://localhost:9000/word/en?word=' + word).body)
-ar_model = lambda word: json.loads(requests.get('http://localhost:9000/word/ar?word=' + word).body)
-
+# let's go
 print('launching app')
 app = Flask(__name__)
 
 app.config['UPLOAD_FOLDER'] = './uploads'
 ALLOWED_EXTENSIONS = {'txt', 'csv'}
 
-# inputs
-training_data = 'data/titanic.csv'
-include = ['Age', 'Sex', 'Embarked', 'Survived']
-dependent_variable = include[-1]
-
+# pickled model
 model_directory = 'model'
 model_file_name = '%s/model.pkl' % model_directory
 model_columns_file_name = '%s/model_columns.pkl' % model_directory
 
-# These will be populated at training time
+# These should be populated at training time
 model_columns = None
 clf = None
 clfclasses = ['pos', 'neg']
 text_type = True # False
 
+# text tokenization and vectorization using FastText
 class V(VectorizerMixin):
     def fit (self, X, y=None):
         return self
@@ -70,17 +92,12 @@ class V(VectorizerMixin):
         query = pd.get_dummies(pd.DataFrame(rows))
         query = query.reindex(columns=model_columns, fill_value=0)
         return query
-
 vectorizer = V()
 
 @app.route('/predict', methods=['POST'])
 def predict():
     if clf:
         try:
-
-            # https://github.com/amirziai/sklearnflask/issues/3
-            # Thanks to @lorenzori
-
             explainers = []
             if text_type:
                 pipe = make_pipeline(vectorizer, clf)
@@ -155,7 +172,7 @@ def process_csv(filename, vectorize_text=False):
             # print(row[1:])
             for w in range(0, len(words)):
                 word = words[w]
-                word_vec = ar_model(word])
+                word_vec = phrase(word)
                 for v in range(0, len(word_vec)):
                     if w == 0:
                         sentence_vecs.append(0.0)
@@ -170,13 +187,9 @@ def process_csv(filename, vectorize_text=False):
             if index == 0:
                 cols += list(df.columns)[1:]
             final_rows.append(sentence_vecs)
-        dependent_variable = cols[-1]
         df_ = pd.DataFrame(final_rows, columns=cols)
     else:
-        # include array is columns of variables used in decision
-        # last column is dependent variable for classifier
-        df_ = df[include]
-        dependent_variable = include[-1]
+        df_ = df # removed include set
 
         for col, col_type in df_.dtypes.items():
             if col_type == 'O':
@@ -186,6 +199,7 @@ def process_csv(filename, vectorize_text=False):
 
     # get_dummies effectively creates one-hot encoded variables
     df_ohe = pd.get_dummies(df_, columns=categoricals, dummy_na=True)
+    dependent_variable = list(df_.columns)[-1]
     x = df_ohe[df_ohe.columns.difference([dependent_variable])]
     y = df_ohe[dependent_variable]
     return (x, y)
@@ -199,6 +213,30 @@ def fitme(x, y):
     joblib.dump(clf, model_file_name)
     return clf
 
+def new_model_id():
+    nowtime = int(datetime.now().timestamp())
+    cursor.execute("INSERT INTO models (created, updated) \
+        VALUES (%s, %s)\
+        RETURNING id", (nowtime, nowtime))
+    conn.commit()
+    row = cursor.fetchone()
+    return row[0]
+
+header_cache = {}
+def get_headers(model_id):
+    model_id = str(int(model_id))
+    if model_id in header_cache:
+        return header_cache[model_id]
+    else:
+        cursor.execute("SELECT * FROM rows_" + model_id + " LIMIT 1")
+        response = list(cursor.fetchone().keys())
+        header_cache[model_id] = response
+        return response
+
+def upload_csv_file(filename, table_code):
+    fn = os.path.join(app.config['UPLOAD_FOLDER'], filename)
+    return os.system('csvsql ' + fn + ' --db ' + connection_string + ' --tables rows_' + str(table_code) + ' --insert &')
+
 @app.route('/train/create', methods=['POST'])
 def create_train():
     try:
@@ -211,6 +249,9 @@ def create_train():
     clfclasses = []
     (x, y) = process_csv(filename)
 
+    my_id = new_model_id()
+    upload_csv_file(filename, my_id)
+
     # capture a list of columns that will be used for prediction
     global model_columns
     model_columns = list(x.columns)
@@ -220,10 +261,13 @@ def create_train():
     text_type = False
     fitme(x, y)
 
-    message1 = 'Trained in %.5f seconds' % (time.time() - start)
-    message2 = 'Model training score: %s' % clf.score(x, y)
-    return_message = 'Success. \n{0}. \n{1}.'.format(message1, message2)
-    return return_message
+    return_message = {
+        "status": "success",
+        "train_time": (time.time() - start),
+        "train_score": clf.score(x, y),
+        "model_id": my_id
+    }
+    return jsonify(return_message)
 
 @app.route('/train_text/create', methods=['POST'])
 def create_text():
@@ -237,6 +281,9 @@ def create_text():
     clfclasses = []
     (x, y) = process_csv(filename, vectorize_text=True)
 
+    my_id = new_model_id()
+    upload_csv_file(filename, my_id)
+
     # capture a list of columns that will be used for prediction
     global model_columns
     model_columns = list(x.columns)
@@ -246,10 +293,13 @@ def create_text():
     text_type = True
     fitme(x, y)
 
-    message1 = 'Trained in %.5f seconds' % (time.time() - start)
-    message2 = 'Model training score: %s' % clf.score(x, y)
-    return_message = 'Success. \n{0}. \n{1}.'.format(message1, message2)
-    return return_message
+    return_message = {
+        "status": "success",
+        "train_time": (time.time() - start),
+        "train_score": clf.score(x, y),
+        "model_id": my_id
+    }
+    return jsonify(return_message)
 
 @app.route('/train/insert', methods=['POST'])
 def insert_train():
@@ -285,6 +335,54 @@ def insert_text():
         print('train first')
         return 'no model here'
 
+@app.route('/training_data/<model_id>', methods=['GET'])
+def tdata_html(model_id):
+    with open('frontend/data-table.html') as content:
+        return content.read()
+
+@app.route('/training_data/headers/<model_id>', methods=['GET'])
+def tdata_headers_api(model_id):
+    return jsonify(get_headers(model_id))
+
+@app.route('/training_data/api/<model_id>', methods=['GET'])
+def tdata_api(model_id):
+    model_id = str(int(model_id))
+    cursor.execute('SELECT COUNT(*) FROM rows_' + model_id)
+    count = cursor.fetchone()[0]
+
+    sql_query = 'SELECT * FROM rows_' + model_id
+
+    # ensures latest response comes back to table
+    draw = int(request.args.get('draw'))
+
+    # order
+    order_col = request.args.get('order[0][column]')
+    order_dir = request.args.get('order[0][dir]')
+    if order_col is not None and order_dir in ['asc', 'desc']:
+        order_col = int(order_col)
+        headers = get_headers(model_id)
+        sql_query += ' ORDER BY "' + headers[order_col].replace('"', '\\"') + '" ' + order_dir
+
+    offset = str(int(request.args.get('start')))
+    length = str(int(request.args.get('length')))
+    sql_query += ' OFFSET ' + offset + ' LIMIT ' + length
+
+    cursor.execute(sql_query)
+
+    rows = []
+    for rout in cursor.fetchall():
+        row = []
+        for col in rout.keys():
+            row.append(rout[col])
+        rows.append(row)
+
+    return jsonify({
+        "draw": draw,
+        "recordsTotal": count,
+        "recordsFiltered": count,
+        "data": rows
+    })
+
 @app.route('/train/delete', methods=['GET'])
 def delete_train():
     try:
@@ -298,10 +396,7 @@ def delete_train():
 
 
 if __name__ == '__main__':
-    try:
-        port = int(sys.argv[1])
-    except Exception as e:
-        port = 8080
+    port = 8080
 
     try:
         clf = joblib.load(model_file_name)

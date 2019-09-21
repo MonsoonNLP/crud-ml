@@ -1,0 +1,43 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <meta charset="utf-8"/>
+    <title>Training Data / DataTables</title>
+    <link rel="stylesheet" href="https://cdn.datatables.net/1.10.19/css/jquery.dataTables.min.css"/>
+    <style type="text/css">
+body { font-family: arial, sans-serif; }
+table { width: 100%; }
+#example_filter { display: none; }
+    </style>
+  </head>
+  <body>
+    <table id="example" class="display">
+      <thead>
+        <tr class="headers">
+        </tr>
+      </thead>
+    </table>
+
+    <script src="https://code.jquery.com/jquery-3.3.1.js"></script>
+    <script src="https://cdn.datatables.net/1.10.19/js/jquery.dataTables.min.js"></script>
+    <script>
+$(document).ready(function() {
+  let urlSections = window.location.href.split("?")[0].split("/");
+  let modelID = urlSections[urlSections.length - 1];
+  fetch("/training_data/headers/" + modelID).then(res => res.json()).then((headers) => {
+    headers.forEach((column, i) => {
+      $("#example .headers").append(
+        $("<th>").text(column)
+      );
+    });
+
+    $('#example').DataTable({
+      "processing": true,
+      "serverSide": true,
+      "ajax": "/training_data/api/" + modelID
+    });
+  });
+});
+    </script>
+  </body>
+</html>
