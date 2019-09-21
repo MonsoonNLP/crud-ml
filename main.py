@@ -55,7 +55,7 @@ ALLOWED_EXTENSIONS = {'txt', 'csv'}
 model_columns = None
 clf = None
 clfclasses = ['pos', 'neg']
-text_type = True # False
+include = ['Age', 'Sex', 'Embarked', 'Survived']
 def model_file_name(model_id):
     model_id = str(int(model_id))
     return os.path.join('model', model_id + '.pkl')
@@ -95,12 +95,12 @@ class V(VectorizerMixin):
         return query
 vectorizer = V()
 
-@app.route('/predict', methods=['POST'])
-def predict():
+@app.route('/predict/<model_id>', methods=['POST'])
+def predict(model_id):
     if clf:
         try:
             explainers = []
-            if text_type:
+            if is_text_type(model_id):
                 pipe = make_pipeline(vectorizer, clf)
                 prediction = pipe.predict(request.json)
 
@@ -190,7 +190,7 @@ def process_csv(filename, vectorize_text=False):
             final_rows.append(sentence_vecs)
         df_ = pd.DataFrame(final_rows, columns=cols)
     else:
-        df_ = df # removed include set
+        df_ = df[include]
 
         for col, col_type in df_.dtypes.items():
             if col_type == 'O':
@@ -222,6 +222,17 @@ def new_model_id(text_type=False):
     conn.commit()
     row = cursor.fetchone()
     return row[0]
+
+ttype_cache = {}
+def is_text_type(model_id):
+    model_id = str(int(model_id))
+    if model_id in ttype_cache:
+        return ttype_cache[model_id]
+    else:
+        cursor.execute("SELECT text_type FROM models WHERE id = " + model_id)
+        response = cursor.fetchone()["text_type"]
+        header_cache[model_id] = response
+        return response
 
 header_cache = {}
 def get_headers(model_id):
@@ -301,7 +312,6 @@ def create_text():
     joblib.dump(model_columns, model_columns_file_name(model_id))
 
     start = time.time()
-    text_type = True
     fitme(x, y, model_id)
 
     return_message = {
@@ -322,7 +332,6 @@ def insert_train(model_id):
             print(e)
             return str(e)
 
-        text_type = False
         (x, y) = process_csv(filename)
         try:
             upload_csv_file(filename, model_id, update_only=True)
@@ -332,7 +341,7 @@ def insert_train(model_id):
         return jsonify({
             "status": "success",
             "model_id": model_id,
-            "score": clf.score(x, y)
+            "train_score": clf.score(x, y)
         })
     else:
         print('train first')
@@ -348,7 +357,6 @@ def insert_text(model_id):
             print(e)
             return str(e)
 
-        text_type = True
         (x, y) = process_csv(filename, vectorize_text=True)
         try:
             upload_csv_file(filename, model_id, update_only=True)
