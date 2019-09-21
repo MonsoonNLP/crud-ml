@@ -8,7 +8,7 @@ try:
     ar_model = KeyedVectors.load_word2vec_format('wiki.ar.vec')
     en_model = KeyedVectors.load_word2vec_format('wiki.en.vec')
 except:
-    print('Arabic word vectors not in same directory')
+    print('Arabic and/or English word vectors not in same directory')
 
 app = Flask(__name__)
 
