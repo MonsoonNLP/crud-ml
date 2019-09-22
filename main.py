@@ -433,6 +433,7 @@ def tdata_adjust(model_id):
             clean_word = word.replace("\'", "").replace("%", "").replace("\\", "")
             cursor.execute("DELETE FROM word_adjust WHERE model_id = %s AND word = %s", (model_id, clean_word))
             cursor.execute("INSERT INTO word_adjust (model_id, word, value) VALUES (%s, %s, %s)", (model_id, clean_word, word_values[word]))
+        conn.commit()
 
     return jsonify({ "status": "success" })
 
