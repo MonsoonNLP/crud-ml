@@ -1,5 +1,6 @@
 clfclasses = ['pos', 'neg']
 include = ['Age', 'Sex', 'Embarked', 'Survived']
+clfs = {}
 NLP_DEMO = True
 DATABASE = True
 # use in no-db setup
@@ -63,7 +64,6 @@ ALLOWED_EXTENSIONS = {'txt', 'csv'}
 
 # These should be populated at training time
 model_columns = None
-clf = None
 def model_file_name(model_id):
     model_id = str(int(model_id))
     return os.path.join('model', model_id + '.pkl')
@@ -105,8 +105,12 @@ vectorizer = V()
 
 @app.route('/predict/<model_id>', methods=['POST'])
 def predict(model_id):
-    if clf:
+    if os.path.exists("model/" + str(int(model_id)) + ".pkl"):
         try:
+            if str(model_id) in clfs:
+                clf = clfs[str(model_id)]
+            else:
+                clf = joblib.load(model_file_name(model_id))
             explainers = []
             if is_text_type(model_id):
                 pipe = make_pipeline(vectorizer, clf)
@@ -214,8 +218,14 @@ def process_csv(filename, vectorize_text=False):
     return (x, y)
 
 def fitme(x, y, model_id):
-    global clf, clfclasses
-    clf = SGDClassifier(loss='log')
+    global clfclasses
+    if str(model_id) in clfs:
+        clf = clfs[str(model_id)]
+    elif os.path.exists("model/" + str(int(model_id)) + ".pkl"):
+        clf = joblib.load(model_file_name(model_id))
+    else:
+        clf = SGDClassifier(loss='log')
+    clfs[str(model_id)] = clf
     if len(clfclasses) == 0:
         clfclasses = np.unique(y)
     clf.partial_fit(x, y, classes=clfclasses)
@@ -302,7 +312,7 @@ def create_train():
 
     start = time.time()
     text_type = False
-    fitme(x, y, model_id)
+    clf = fitme(x, y, model_id)
 
     return_message = {
         "status": "success",
@@ -333,7 +343,7 @@ def create_text():
     joblib.dump(model_columns, model_columns_file_name(model_id))
 
     start = time.time()
-    fitme(x, y, model_id)
+    clf = fitme(x, y, model_id)
 
     return_message = {
         "status": "success",
@@ -345,7 +355,7 @@ def create_text():
 
 @app.route('/train/insert/<model_id>', methods=['POST'])
 def insert_train(model_id):
-    if clf:
+    if os.path.exists("model/" + str(int(model_id)) + ".pkl"):
         try:
             filename = validate_file(request)
             model_id = int(model_id)
@@ -358,7 +368,7 @@ def insert_train(model_id):
             upload_csv_file(filename, model_id, update_only=True)
         except:
             return 'initial CSV has not created table yet / or failed to create table'
-        fitme(x, y, model_id)
+        clf = fitme(x, y, model_id)
         return jsonify({
             "status": "success",
             "model_id": model_id,
@@ -370,7 +380,7 @@ def insert_train(model_id):
 
 @app.route('/train_text/insert/<model_id>', methods=['POST'])
 def insert_text(model_id):
-    if clf:
+    if os.path.exists("model/" + str(int(model_id)) + ".pkl"):
         try:
             filename = validate_file(request)
             model_id = int(model_id)
@@ -383,7 +393,7 @@ def insert_text(model_id):
             upload_csv_file(filename, model_id, update_only=True)
         except:
             return 'initial CSV has not created table yet / or failed to create table'
-        fitme(x, y, model_id)
+        clf = fitme(x, y, model_id)
         return jsonify({
             "status": "success",
             "model_id": model_id,
@@ -510,6 +520,5 @@ if __name__ == '__main__':
         print('No model here')
         print('Train first')
         print(str(e))
-        clf = None
 
     app.run(host='0.0.0.0', port=port, debug=True)
