@@ -1,3 +1,5 @@
+clfclasses = ['pos', 'neg']
+include = ['Age', 'Sex', 'Embarked', 'Survived']
 NLP_DEMO = True
 DATABASE = True
 # use in no-db setup
@@ -62,8 +64,6 @@ ALLOWED_EXTENSIONS = {'txt', 'csv'}
 # These should be populated at training time
 model_columns = None
 clf = None
-clfclasses = ['pos', 'neg']
-include = ['Age', 'Sex', 'Embarked', 'Survived']
 def model_file_name(model_id):
     model_id = str(int(model_id))
     return os.path.join('model', model_id + '.pkl')

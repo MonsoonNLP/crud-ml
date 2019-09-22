@@ -9,9 +9,24 @@ The new features:
 - SQL database of submitted data rows
 - adjustable final layer for word weights
 
+### Customizing
+
 The database is not required for training or prediction, but is useful here to identify models,
-show training data, and add word weights. In main.py you can set DATABASE = False and the next two
+show training data, and add word weights. In ```main.py``` you can set ```DATABASE = False``` and the next two
 lines for parameters.
+
+For text data / NLP, I chose <a href="https://fasttext.cc/docs/en/pretrained-vectors.html">FastText</a>
+ as the pre-trained word embeddings source for its many languages. You could use any Word2Vec-compatible
+source. With some additional coding, you could replace the Vectorizer class with GPT-2 with HuggingFace's
+<a href="https://github.com/huggingface/pytorch-transformers">PyTorch-Transformers</a>
+ (
+  <a href="https://github.com/mapmeld/tweet_classifier_plus_eli5/blob/master/gpt2_sklearn.py">see example</a>
+), or SciKit-Learn's own TfidfVectorizer (
+  <a href="https://github.com/mapmeld/tweet_classifier_plus_eli5/blob/master/basic_sklearn.py">see example</a>
+).
+
+I chose ```SGDClassifier``` as the SciKit-Learn model, as only this, ```Perceptron```, and ```PassiveAggressiveClassifier``` support both incremental learning and ELI5 native integration. If you use only text data, and use vectorizers outside of SciKit-Learn (including the current FastText/word2vec setup), the vectorizer will break ELI5 integration and need to use the LIME algorithm. If you are in this situation, you are free to switch to any
+<a href="https://scikit-learn.org/stable/modules/computing.html#incremental-learning">incremental learning classifier</a>.
 
 ### Dependencies
 - scikit-learn
