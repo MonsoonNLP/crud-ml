@@ -26,4 +26,7 @@ CREATE TABLE IF NOT EXISTS word_adjust (
 )
 """)
 
+cursor.execute("CREATE INDEX IF NOT EXISTS wad ON word_adjust (model_id);")
+cursor.execute("CREATE INDEX IF NOT EXISTS wad2 ON word_adjust (word);")
+
 conn.commit()

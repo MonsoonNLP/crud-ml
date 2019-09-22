@@ -4,7 +4,7 @@ DATABASE = True
 # default_text_type = True
 # default_headers = ['text']
 
-import sys, os, json, time, traceback
+import sys, os, json, time, traceback, csv
 from datetime import datetime
 
 # Flask server stuff
@@ -406,6 +406,35 @@ def predict_hub(model_id):
 @app.route('/training_data/headers/<model_id>', methods=['GET'])
 def tdata_headers_api(model_id):
     return jsonify(get_headers(model_id))
+
+@app.route('/training_data/find_word/<model_id>', methods=['POST'])
+def tdata_find_word(model_id):
+    model_id = str(int(model_id))
+    interestWord = request.json['text'].lower().replace("\'", "").replace("%", "").replace("\\", "")
+    rows = []
+    if DATABASE:
+        cursor.execute('SELECT text FROM rows_' + model_id + ' WHERE LOWER(text) LIKE \'%' + interestWord + '%\'')
+        for row in cursor.fetchall():
+            rows.append(row[0])
+    else:
+        with open('data/nlp.csv', 'r') as csvfile:
+            rdr = csv.reader(csvfile, delimiter=",")
+            for row in rdr:
+                rows.append(','.join(row))
+    return jsonify(rows)
+
+@app.route('/training_data/adjust/<model_id>', methods=['POST'])
+def tdata_adjust(model_id):
+    model_id = int(model_id)
+    word_values = request.json['words']
+    interestWords = word_values.keys()
+    if DATABASE:
+        for word in interestWords:
+            clean_word = word.replace("\'", "").replace("%", "").replace("\\", "")
+            cursor.execute("DELETE FROM word_adjust WHERE model_id = %s AND word = %s", (model_id, clean_word))
+            cursor.execute("INSERT INTO word_adjust (model_id, word, value) VALUES (%s, %s, %s)", (model_id, clean_word, word_values[word]))
+
+    return jsonify({ "status": "success" })
 
 @app.route('/training_data/api/<model_id>', methods=['GET'])
 def tdata_api(model_id):
