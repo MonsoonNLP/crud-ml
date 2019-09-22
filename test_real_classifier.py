@@ -26,11 +26,12 @@ print('creating initial model')
 files = { 'file': open('data/combined_arabic_0.csv', 'r') }
 r = requests.post(url + '/train_text/create', files=files, data={}, verify=False)
 print(r.content)
+model_id = str(r.json()["model_id"])
 
 for fragment in range(1, round(len(all) / 1500 + 0.5)):
     print('uploading ' + str(fragment))
     files = { 'file': open('data/combined_arabic_' + str(fragment) + '.csv', 'r') }
-    r = requests.post(url + '/train_text/insert', files=files, data={}, verify=False)
+    r = requests.post(url + '/train_text/insert/' + model_id, files=files, data={}, verify=False)
     print(r.content)
 
 predict = 'إذا مزاجك تنهي الشهر بويك إند مرعب 👻 - Clown قناع عيد ميلاد ولده، يصير لعنة 🤡 - The conjuring 2 روح شريرة تستحوذ على بنت 😱 - The mist كائن مرعب يختفي وراء الضباب 😶 - Slasher قاتل متسلسل يهدد حياة الناس 😨  - OCULUS أخوات يحاولوا التغلب على صدمة وفاة والديهم'
@@ -39,5 +40,5 @@ body = [
     {"text": predict},
     {"text": predict2}
 ]
-r3 = requests.post(url + '/predict', json=body)
+r3 = requests.post(url + '/predict/' + model_id, json=body)
 print(r3.content)

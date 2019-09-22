@@ -1,0 +1,38 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <meta charset="utf-8"/>
+    <title>Predict Hub</title>
+    <style>
+body { font-family: arial, sans-serif; padding: 30px; font-size: 14pt; }
+textarea { width: 500px; height: 150px; font-size: 14pt; }
+button { font-size: 14pt; }
+    </style>
+  </head>
+  <body>
+    <strong>Model ID</strong>:
+    <span id="model_id"></span>
+    <br/>
+    <strong>Content</strong>
+    <br/>
+    <textarea id="content" placeholder="Paste in a Tweet for analysis"></textarea>
+    <br/>
+    <button id="submit">Predict</button>
+
+    <script src="https://code.jquery.com/jquery-3.3.1.js"></script>
+    <script>
+$(document).ready(function() {
+  let urlSections = window.location.href.split("?")[0].split("/");
+  let modelID = urlSections[urlSections.length - 1];
+  $("#model_id").text(modelID);
+  $("#submit").click((e) => {
+    fetch("/predict/" + modelID, { method: 'POST', body: $('#content').val() })
+      .then(res => res.json())
+      .then((data) => {
+        console.log(data);
+      });
+  });
+});
+    </script>
+  </body>
+</html>

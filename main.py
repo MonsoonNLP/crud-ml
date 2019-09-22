@@ -1,3 +1,9 @@
+NLP_DEMO = True
+DATABASE = True
+# use in no-db setup
+# default_text_type = True
+# default_headers = ['text']
+
 import sys, os, json, time, traceback
 from datetime import datetime
 
@@ -18,18 +24,18 @@ import eli5
 from eli5.lime import TextExplainer
 
 # DB stuff
-import psycopg2
-from psycopg2.extras import DictCursor
-try:
-    connection_string = sys.argv[1]
-except:
-    print('need a DB connection string')
-conn = psycopg2.connect(connection_string)
-cursor = conn.cursor(cursor_factory=DictCursor)
+if DATABASE:
+    import psycopg2
+    from psycopg2.extras import DictCursor
+    try:
+        connection_string = sys.argv[1]
+    except:
+        print('need a DB connection string')
+    conn = psycopg2.connect(connection_string)
+    cursor = conn.cursor(cursor_factory=DictCursor)
 
 # NLP stuff
-DEMO = True
-if DEMO:
+if NLP_DEMO:
     print("using localhost:9000 as word vector source")
     import requests
     #en_model = lambda word: json.loads(requests.get('http://localhost:9000/word/en?word=' + word).body)
@@ -42,6 +48,8 @@ else:
         if word not in ar_src:
             word = "the"
         return ar_src[word]
+# switch based on what language we are using
+phrase = ar_model
 from nltk.tokenize import wordpunct_tokenize
 
 # let's go
@@ -215,13 +223,16 @@ def fitme(x, y, model_id):
     return clf
 
 def new_model_id(text_type=False):
-    nowtime = int(datetime.now().timestamp())
-    cursor.execute("INSERT INTO models (created, updated, text_type) \
-        VALUES (%s, %s, %s)\
-        RETURNING id", (nowtime, nowtime, text_type))
-    conn.commit()
-    row = cursor.fetchone()
-    return row[0]
+    if DATABASE:
+        nowtime = int(datetime.now().timestamp())
+        cursor.execute("INSERT INTO models (created, updated, text_type) \
+            VALUES (%s, %s, %s)\
+            RETURNING id", (nowtime, nowtime, text_type))
+        conn.commit()
+        row = cursor.fetchone()
+        return row[0]
+    else:
+        return 1
 
 ttype_cache = {}
 def is_text_type(model_id):
@@ -229,8 +240,11 @@ def is_text_type(model_id):
     if model_id in ttype_cache:
         return ttype_cache[model_id]
     else:
-        cursor.execute("SELECT text_type FROM models WHERE id = " + model_id)
-        response = cursor.fetchone()["text_type"]
+        if DATABASE:
+            cursor.execute("SELECT text_type FROM models WHERE id = " + model_id)
+            response = cursor.fetchone()["text_type"]
+        else:
+            response = default_text_type
         header_cache[model_id] = response
         return response
 
@@ -240,8 +254,11 @@ def get_headers(model_id):
     if model_id in header_cache:
         return header_cache[model_id]
     else:
-        cursor.execute("SELECT * FROM rows_" + model_id + " LIMIT 1")
-        response = list(cursor.fetchone().keys())
+        if DATABASE:
+            cursor.execute("SELECT * FROM rows_" + model_id + " LIMIT 1")
+            response = list(cursor.fetchone().keys())
+        else:
+            response = default_headers
         header_cache[model_id] = response
         return response
 
@@ -252,12 +269,16 @@ def upload_csv_file(filename, table_code, update_only=False):
     if update_only:
         # verify enough time passed that this table exists
         if table_code not in table_cache:
-            cursor.execute("SELECT * FROM rows_" + table_code + " LIMIT 0")
+            if DATABASE:
+                cursor.execute("SELECT * FROM rows_" + table_code + " LIMIT 0")
             table_cache[table_code] = True
         update_code = " --no-create"
     else:
         update_code = ""
-    return os.system('csvsql ' + fn + ' --db ' + connection_string + ' --tables rows_' + table_code + ' --insert ' + update_code + ' &')
+    if DATABASE:
+        return os.system('csvsql ' + fn + ' --db ' + connection_string + ' --tables rows_' + table_code + ' --insert ' + update_code + ' &')
+    else:
+        return 1
 
 @app.route('/train/create', methods=['POST'])
 def create_train():
@@ -377,12 +398,19 @@ def tdata_html(model_id):
     with open('frontend/data-table.html') as content:
         return content.read()
 
+@app.route('/predict_hub/<model_id>', methods=['GET'])
+def predict_hub(model_id):
+    with open('frontend/predict-hub.html') as content:
+        return content.read()
+
 @app.route('/training_data/headers/<model_id>', methods=['GET'])
 def tdata_headers_api(model_id):
     return jsonify(get_headers(model_id))
 
 @app.route('/training_data/api/<model_id>', methods=['GET'])
 def tdata_api(model_id):
+    if not DATABASE:
+        return jsonify({ "error": "No Database" })
     model_id = str(int(model_id))
     cursor.execute('SELECT COUNT(*) FROM rows_' + model_id)
     count = cursor.fetchone()[0]
@@ -427,8 +455,9 @@ def delete_train(model_id):
         os.remove('model/' + model_id + '.pkl')
         os.remove('model/' + model_id + '_columns.pkl')
 
-        cursor.execute('DROP TABLE rows_' + model_id)
-        conn.commit()
+        if DATABASE:
+            cursor.execute('DROP TABLE rows_' + model_id)
+            conn.commit()
 
         return 'Model wiped'
 

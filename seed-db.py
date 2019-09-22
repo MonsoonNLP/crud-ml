@@ -17,4 +17,13 @@ CREATE TABLE IF NOT EXISTS models (
     text_type BOOLEAN
 )
 """)
+
+cursor.execute("""
+CREATE TABLE IF NOT EXISTS word_adjust (
+    model_id INT,
+    word TEXT,
+    value FLOAT
+)
+""")
+
 conn.commit()

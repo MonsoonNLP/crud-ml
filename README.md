@@ -3,10 +3,15 @@
 This repo is based directly on Amir Ziai's <a href="https://github.com/amirziai/sklearnflask">SKLearnFlask</a> ML server, which serves predictions from a scikit-learn model.
 
 The new features:
-- accepts POST-ed CSVs
-- incremental learning (using particular algorithms)
-- explainable AI
-- database of submitted data rows
+- parses POST-ed CSVs
+- incremental learning via SciKit-Learn
+- explainable AI via ELI5
+- SQL database of submitted data rows
+- adjustable final layer for word weights
+
+The database is not required for training or prediction, but is useful here to identify models,
+show training data, and add word weights. In main.py you can set DATABASE = False and the next two
+lines for parameters.
 
 ### Dependencies
 - scikit-learn
@@ -71,3 +76,6 @@ Deletes the trained model and its training data.
 
 ### /training_data/:model_id (GET)
 HTML / JS table of training data
+
+### /predict_hub/:model_id (GET)
+HTML / JS UI for predictions (text models only)
