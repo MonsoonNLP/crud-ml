@@ -94,3 +94,11 @@ HTML / JS table of training data
 
 ### /predict_hub/:model_id (GET)
 HTML / JS UI for predictions (text models only)
+
+
+# Development blog notes
+
+* <a href="https://medium.com/@mapmeld/the-crud-app-of-machine-learning-2434afd52693">CRUD app of Machine Learning</a>
+* <a href="https://medium.com/@mapmeld/crud-app-for-text-classification-a63c8c52b0ae">CRUD app for Text Classification</a>
+* <a href="https://medium.com/@mapmeld/deciphering-explainable-ai-with-gpt-2-528611a3c75">Deciphering Explainable AI (ELI5, GPT-2)</a>
+* <a href="https://medium.com/@mapmeld/finalizing-the-crud-ml-app-5b1a9320a54b">Finalizing the CRUD ML App</a>
